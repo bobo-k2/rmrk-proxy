@@ -1,8 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![feature(min_specialization)]
 
-pub use self::rmrk_equippable_lazy::RmrkRef;
-
 #[openbrush::contract]
 pub mod rmrk_equippable_lazy {
     use ink::{

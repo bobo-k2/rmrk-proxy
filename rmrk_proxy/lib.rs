@@ -117,9 +117,10 @@ mod rmrk_proxy {
     mod e2e_tests {
         /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
+        use ink_e2e::build_message;
         use crate::rmrk_proxy::RmrkProxyRef;
         use catalog_example::catalog_example::CatalogContractRef;
-        use ink_e2e::build_message;
+        use rmrk_equippable_lazy::rmrk_equippable_lazy::RmrkRef;
         use rmrk::{
             storage::catalog_external::Catalog,
             types::{
@@ -127,8 +128,7 @@ mod rmrk_proxy {
                 PartType,
             },
         };
-        use rmrk_equippable_lazy::rmrk_equippable_lazy::RmrkRef;
-        use openbrush::contracts::traits::psp34::PSP34;
+        use openbrush::contracts::psp34::psp34_external::PSP34;
         
         type E2EResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -204,7 +204,8 @@ mod rmrk_proxy {
 
             // Check if token was minted
             let read_total_supply_message =
-                build_message::<RmrkRef>(rmrk_address.clone()).call(|rmrk| rmrk.owner_of(1));
+                build_message::<RmrkRef>(rmrk_address.clone()).call(|rmrk| rmrk.total_supply());
+
             let read_total_supply_result = client
                 .call_dry_run(&ink_e2e::alice(), &read_total_supply_message, 0, None)
                 .await
