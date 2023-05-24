@@ -19,7 +19,7 @@ mod rmrk_proxy {
 
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
-    pub enum Error {
+    pub enum ProxyError {
         MintingError,
         OwnershipTransferError,
         AddTokenAssetError,
@@ -27,7 +27,7 @@ mod rmrk_proxy {
         TooManyAssetsDefined,
     }
 
-    pub type Result<T> = core::result::Result<T, Error>;
+    pub type Result<T> = core::result::Result<T, ProxyError>;
 
     #[ink(storage)]
     pub struct RmrkProxy {
@@ -48,38 +48,42 @@ mod rmrk_proxy {
 
         #[ink(message, payable)]
         pub fn mint(&mut self) -> Result<()> {
-            let transferred_value = Self::env().transferred_value();
-            let caller = Self::env().caller();
+            const GAS_LIMIT: u64 = 5_000_000_000;
+            const MAX_ASSETS: u32 = 255;
 
             let total_assets = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
-                .gas_limit(5000000000)
+                .gas_limit(GAS_LIMIT)
                 .exec_input(ExecutionInput::new(Selector::new(ink::selector_bytes!(
                     "MultiAsset::total_assets"
                 ))))
                 .returns::<u32>()
                 .try_invoke()
                 .unwrap();
-            ensure!(total_assets.unwrap() > 0, Error::NoAssetsDefined);
+            ensure!(total_assets.unwrap() > 0, ProxyError::NoAssetsDefined);
             // This is temporary since current pseudo random generator is not working with big numbers.
-            ensure!(total_assets.unwrap() < 256, Error::TooManyAssetsDefined);
+            ensure!(
+                total_assets.unwrap() <= MAX_ASSETS,
+                ProxyError::TooManyAssetsDefined
+            );
 
+            let transferred_value = Self::env().transferred_value();
             // TODO check why the call is failing silently when no or invalid transferred value is provided.
             let mint_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
-                .gas_limit(5000000000)
+                .gas_limit(GAS_LIMIT)
                 .transferred_value(transferred_value)
                 .exec_input(ExecutionInput::new(Selector::new(ink::selector_bytes!(
                     "MintingLazy::mint"
                 ))))
                 .returns::<()>()
                 .try_invoke()
-                .map_err(|_| Error::MintingError)?;
-            mint_result.map_err(|_| Error::MintingError)?;
+                .map_err(|_| ProxyError::MintingError)?;
+            mint_result.map_err(|_| ProxyError::MintingError)?;
 
             let token_id = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
-                .gas_limit(5000000000)
+                .gas_limit(GAS_LIMIT)
                 .exec_input(ExecutionInput::new(Selector::new(ink::selector_bytes!(
                     "PSP34::total_supply"
                 ))))
@@ -91,23 +95,24 @@ mod rmrk_proxy {
             let asset_id = self.get_pseudo_random((total_assets.unwrap() - 1) as u8) + 1;
             let add_asset_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
-                .gas_limit(5000000000)
+                .gas_limit(GAS_LIMIT)
                 .exec_input(
                     ExecutionInput::new(Selector::new(ink::selector_bytes!(
                         "MultiAsset::add_asset_to_token"
                     )))
                     .push_arg(Id::U64(token_id)) // TODO determine minted token id. How? totalSupply?
                     .push_arg(asset_id as u32)
-                    .push_arg(None::<u32>)
+                    .push_arg(None::<u32>),
                 )
                 .returns::<()>()
                 .try_invoke()
-                .map_err(|_| Error::AddTokenAssetError)?;
-            add_asset_result.map_err(|_| Error::AddTokenAssetError)?;
+                .map_err(|_| ProxyError::AddTokenAssetError)?;
+            add_asset_result.map_err(|_| ProxyError::AddTokenAssetError)?;
 
+            let caller = Self::env().caller();
             let transfer_token_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
-                .gas_limit(5000000000)
+                .gas_limit(GAS_LIMIT)
                 .exec_input(
                     ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP34::transfer")))
                         .push_arg(caller)
@@ -116,8 +121,8 @@ mod rmrk_proxy {
                 )
                 .returns::<()>()
                 .try_invoke()
-                .map_err(|_| Error::OwnershipTransferError)?;
-            transfer_token_result.map_err(|_| Error::OwnershipTransferError)?;
+                .map_err(|_| ProxyError::OwnershipTransferError)?;
+            transfer_token_result.map_err(|_| ProxyError::OwnershipTransferError)?;
 
             Ok(())
         }
@@ -132,7 +137,7 @@ mod rmrk_proxy {
             self.catalog_contract
         }
 
-        /// Generates pseudo random number, Used to pick a random asset for a token. Big assumption is that we will have less than 256 assets.
+        /// Generates pseudo random number, Used to pick a random asset for a token.
         fn get_pseudo_random(&mut self, max_value: u8) -> u8 {
             let seed = self.env().block_timestamp();
             let mut input: Vec<u8> = Vec::new();
@@ -141,8 +146,7 @@ mod rmrk_proxy {
             let mut output = <hash::Keccak256 as hash::HashOutput>::Type::default();
             ink::env::hash_bytes::<hash::Keccak256>(&input, &mut output);
             self.salt += 1;
-            let number = output[0] % (max_value + 1);
-            number
+            output[0] % (max_value + 1)
         }
     }
 
@@ -163,7 +167,6 @@ mod rmrk_proxy {
 
     #[cfg(all(test, feature = "e2e-tests"))]
     mod e2e_tests {
-        use super::*;
         use crate::rmrk_proxy::RmrkProxyRef;
         use catalog_example::catalog_example::CatalogContractRef;
         use ink::primitives::AccountId;
@@ -222,7 +225,7 @@ mod rmrk_proxy {
                 .return_value();
             assert_eq!(read_parts_count_result, 1);
 
-            // *************** Create RMRK contract and add assets ***************
+            // *************** Create RMRK contract and add asset entry ***************
             let rmrk_constructor = RmrkRef::new(
                 String::from("Test").into(),
                 String::from("TST").into(),
@@ -256,8 +259,7 @@ mod rmrk_proxy {
                 .expect("Add asset entry failed");
 
             let read_assets_count_message =
-                build_message::<RmrkRef>(rmrk_address.clone())
-                    .call(|rmrk| rmrk.total_assets());
+                build_message::<RmrkRef>(rmrk_address.clone()).call(|rmrk| rmrk.total_assets());
             let read_assets_count_result = client
                 .call_dry_run(&alice, &read_assets_count_message, 0, None)
                 .await
@@ -299,7 +301,7 @@ mod rmrk_proxy {
                 .await
                 .return_value()
                 .unwrap();
-            ink::env::debug_println!("token assets: {:?}", read_total_assets_result);
+            // ink::env::debug_println!("token assets: {:?}", read_total_assets_result);
             assert_eq!(read_total_assets_result.0, 1);
 
             // Check if token owner is same as the caller.
@@ -311,13 +313,10 @@ mod rmrk_proxy {
                 .await
                 .return_value()
                 .unwrap();
-            ink::env::debug_println!(
-                "token_owner: {:?} {:?}",
-                read_owner_of_result,
-                *alice.account_id()
-            );
-            // TODO AccountId to AccountId32 conversion. Also investigate possibility to convert accounts to Vec<u8>
-            // assert_eq!(read_owner_of_result, *alice.account_id().);
+
+            let alice_account_id_32 = alice.account_id();
+            let alice_account_id = AccountId::try_from(alice_account_id_32.as_ref()).unwrap();
+            assert_eq!(read_owner_of_result, alice_account_id);
 
             Ok(())
         }

@@ -6,7 +6,7 @@ RMRK contract proxy enables lazy token minting on RMRK contract. The proxy contr
   - adds random asset to the token
   - transfers the token to the method caller
 
-To be able to use this contract some prerequisites must be met:
+To be able to use this contract some prerequisites (see e2e test for details) must be met:
 - RMRK and catalog contract deployed
 - parts added to the catalog contract (`catalog::addPartList`)
 - asset entries added to the RMRK contract (call `multiAsset::addAssetEntry` for each entry you want to add)
