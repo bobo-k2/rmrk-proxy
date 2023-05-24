@@ -22,8 +22,9 @@ mod rmrk_proxy {
     pub enum Error {
         MintingError,
         OwnershipTransferError,
+        AddTokenAssetError,
         NoAssetsDefined,
-        TooManyAssets,
+        TooManyAssetsDefined,
     }
 
     pub type Result<T> = core::result::Result<T, Error>;
@@ -62,10 +63,10 @@ mod rmrk_proxy {
                 .unwrap();
             ensure!(total_assets.unwrap() > 0, Error::NoAssetsDefined);
             // This is temporary since current pseudo random generator is not working with big numbers.
-            ensure!(total_assets.unwrap() < 256, Error::TooManyAssets);
+            ensure!(total_assets.unwrap() < 256, Error::TooManyAssetsDefined);
 
-            // TODO check why the call is failing silently when no transferred value is provided.
-            let _mint_result = build_call::<DefaultEnvironment>()
+            // TODO check why the call is failing silently when no or invalid transferred value is provided.
+            let mint_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
                 .gas_limit(5000000000)
                 .transferred_value(transferred_value)
@@ -75,9 +76,10 @@ mod rmrk_proxy {
                 .returns::<()>()
                 .try_invoke()
                 .map_err(|_| Error::MintingError)?;
+            mint_result.map_err(|_| Error::MintingError)?;
 
-            let asset_id = self.get_pseudo_random((total_assets.unwrap() -1)  as u8);
-            let _add_asset_result = build_call::<DefaultEnvironment>()
+            let asset_id = self.get_pseudo_random((total_assets.unwrap() - 1) as u8) + 1;
+            let add_asset_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
                 .gas_limit(5000000000)
                 .exec_input(
@@ -85,12 +87,15 @@ mod rmrk_proxy {
                         "MultiAsset::add_asset_to_token"
                     )))
                     .push_arg(Id::U64(1))
-                    .push_arg(asset_id as u32),
+                    .push_arg(asset_id as u32)
+                    .push_arg(None::<u32>)
                 )
                 .returns::<()>()
-                .try_invoke();
+                .try_invoke()
+                .map_err(|_| Error::AddTokenAssetError)?;
+            add_asset_result.map_err(|_| Error::AddTokenAssetError)?;
 
-            let _transfer_token_result = build_call::<DefaultEnvironment>()
+            let transfer_token_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
                 .gas_limit(5000000000)
                 .exec_input(
@@ -102,6 +107,7 @@ mod rmrk_proxy {
                 .returns::<()>()
                 .try_invoke()
                 .map_err(|_| Error::OwnershipTransferError)?;
+            transfer_token_result.map_err(|_| Error::OwnershipTransferError)?;
 
             Ok(())
         }
@@ -183,6 +189,7 @@ mod rmrk_proxy {
         async fn mint_works(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
             let alice = ink_e2e::alice();
 
+            // *************** Create catalog contract and add parts ***************
             let catalog_constructor = CatalogContractRef::new(String::from("ipfs://").into());
             let catalog_contract_address = client
                 .instantiate("catalog_example", &alice, catalog_constructor, 0, None)
@@ -191,7 +198,7 @@ mod rmrk_proxy {
                 .account_id;
 
             // Add part to catalog
-            let part_ids = vec![1];
+            let part_ids = vec![0];
             let parts = vec![Part {
                 part_type: PartType::Fixed,
                 z: 0,
@@ -206,6 +213,7 @@ mod rmrk_proxy {
                 .call(&alice, add_part_message, 0, None)
                 .await
                 .expect("Add part failed");
+
             let read_parts_count_message =
                 build_message::<CatalogContractRef>(catalog_contract_address.clone())
                     .call(|catalog| catalog.get_parts_count());
@@ -215,7 +223,7 @@ mod rmrk_proxy {
                 .return_value();
             assert_eq!(read_parts_count_result, 1);
 
-            // RMRK contract
+            // *************** Create RMRK contract and add assets ***************
             let rmrk_constructor = RmrkRef::new(
                 String::from("Test").into(),
                 String::from("TST").into(),
@@ -237,7 +245,7 @@ mod rmrk_proxy {
                 build_message::<RmrkRef>(rmrk_address.clone()).call(|rmrk| {
                     rmrk.add_asset_entry(
                         Some(catalog_contract_address.clone()),
-                        0,
+                        1,
                         1,
                         String::from("ipfs://parturi").into(),
                         vec![0],
@@ -248,7 +256,16 @@ mod rmrk_proxy {
                 .await
                 .expect("Add asset entry failed");
 
-            // Proxy contract
+            let read_assets_count_message =
+                build_message::<RmrkRef>(rmrk_address.clone())
+                    .call(|rmrk| rmrk.total_assets());
+            let read_assets_count_result = client
+                .call_dry_run(&alice, &read_assets_count_message, 0, None)
+                .await
+                .return_value();
+            assert_eq!(read_assets_count_result, 1);
+
+            // *************** Create RMRK proxy contract and mint ***************
             let proxy_constructor = RmrkProxyRef::new(rmrk_address, catalog_contract_address);
             let proxy_address = client
                 .instantiate("rmrk_proxy", &alice, proxy_constructor, 0, None)
@@ -275,14 +292,16 @@ mod rmrk_proxy {
             assert_eq!(read_total_supply_result, 1);
 
             // Check if asset has been added to token
-            let read_total_assets_message =
-                build_message::<RmrkRef>(rmrk_address.clone()).call(|rmrk| rmrk.total_assets());
+            let read_total_assets_message = build_message::<RmrkRef>(rmrk_address.clone())
+                .call(|rmrk| rmrk.total_token_assets(Id::U64(1)));
 
             let read_total_assets_result = client
                 .call_dry_run(&alice, &read_total_assets_message, 0, None)
                 .await
-                .return_value();
-            assert_eq!(read_total_assets_result, 1);
+                .return_value()
+                .unwrap();
+            ink::env::debug_println!("token assets: {:?}", read_total_assets_result);
+            assert_eq!(read_total_assets_result.0, 1);
 
             // Check if token owner is correct
             let read_owner_of_message = build_message::<RmrkRef>(rmrk_address.clone())
@@ -298,6 +317,7 @@ mod rmrk_proxy {
                 read_owner_of_result,
                 *alice.account_id()
             );
+            // TODO AccountId to AccountId32 conversion. Also investigate possibility to convert accounts to Vec<u8>
             // assert_eq!(read_owner_of_result, *alice.account_id().);
 
             Ok(())
