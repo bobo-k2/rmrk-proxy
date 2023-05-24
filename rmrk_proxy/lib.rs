@@ -33,13 +33,12 @@ mod rmrk_proxy {
     pub struct RmrkProxy {
         rmrk_contract: AccountId,
         catalog_contract: AccountId,
-        salt: u64,
+        salt: u64, // used for pseudo random number generation
     }
 
     impl RmrkProxy {
         #[ink(constructor)]
         pub fn new(rmrk_contract: AccountId, catalog_contract: AccountId) -> Self {
-            // TODO check if it is possible to get minting price from rmrk contract. If no add it as a parameter.
             Self {
                 rmrk_contract,
                 catalog_contract,
@@ -78,6 +77,17 @@ mod rmrk_proxy {
                 .map_err(|_| Error::MintingError)?;
             mint_result.map_err(|_| Error::MintingError)?;
 
+            let token_id = build_call::<DefaultEnvironment>()
+                .call(self.rmrk_contract)
+                .gas_limit(5000000000)
+                .exec_input(ExecutionInput::new(Selector::new(ink::selector_bytes!(
+                    "PSP34::total_supply"
+                ))))
+                .returns::<u64>()
+                .try_invoke()
+                .unwrap()
+                .unwrap();
+
             let asset_id = self.get_pseudo_random((total_assets.unwrap() - 1) as u8) + 1;
             let add_asset_result = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
@@ -86,7 +96,7 @@ mod rmrk_proxy {
                     ExecutionInput::new(Selector::new(ink::selector_bytes!(
                         "MultiAsset::add_asset_to_token"
                     )))
-                    .push_arg(Id::U64(1))
+                    .push_arg(Id::U64(token_id)) // TODO determine minted token id. How? totalSupply?
                     .push_arg(asset_id as u32)
                     .push_arg(None::<u32>)
                 )
@@ -101,7 +111,7 @@ mod rmrk_proxy {
                 .exec_input(
                     ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP34::transfer")))
                         .push_arg(caller)
-                        .push_arg(Id::U64(1))
+                        .push_arg(Id::U64(token_id))
                         .push_arg(Vec::<u8>::new()),
                 )
                 .returns::<()>()
@@ -136,15 +146,10 @@ mod rmrk_proxy {
         }
     }
 
-    /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
-    /// module and test functions are marked with a `#[test]` attribute.
-    /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
 
-        /// We test a simple use case of our contract.
         #[ink::test]
         fn constructor_works() {
             let rmrk: AccountId = [0x42; 32].into();
@@ -156,14 +161,8 @@ mod rmrk_proxy {
         }
     }
 
-    // /// This is how you'd write end-to-end (E2E) or integration tests for ink! contracts.
-    // ///
-    // /// When running these you need to make sure that you:
-    // /// - Compile the tests with the `e2e-tests` feature flag enabled (`--features e2e-tests`)
-    // /// - Are running a Substrate node which contains `pallet-contracts` in the background
     #[cfg(all(test, feature = "e2e-tests"))]
     mod e2e_tests {
-        /// Imports all the definitions from the outer scope so we can use them here.
         use super::*;
         use crate::rmrk_proxy::RmrkProxyRef;
         use catalog_example::catalog_example::CatalogContractRef;
@@ -273,7 +272,7 @@ mod rmrk_proxy {
                 .expect("Proxy contract instantiation failed")
                 .account_id;
 
-            // Mint
+            // Mint token.
             let mint_message =
                 build_message::<RmrkProxyRef>(proxy_address.clone()).call(|proxy| proxy.mint());
             client
@@ -291,7 +290,7 @@ mod rmrk_proxy {
                 .return_value();
             assert_eq!(read_total_supply_result, 1);
 
-            // Check if asset has been added to token
+            // Check if asset has been added to the token.
             let read_total_assets_message = build_message::<RmrkRef>(rmrk_address.clone())
                 .call(|rmrk| rmrk.total_token_assets(Id::U64(1)));
 
@@ -303,7 +302,7 @@ mod rmrk_proxy {
             ink::env::debug_println!("token assets: {:?}", read_total_assets_result);
             assert_eq!(read_total_assets_result.0, 1);
 
-            // Check if token owner is correct
+            // Check if token owner is same as the caller.
             let read_owner_of_message = build_message::<RmrkRef>(rmrk_address.clone())
                 .call(|rmrk| rmrk.owner_of(Id::U64(1)));
 
