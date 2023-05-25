@@ -77,9 +77,9 @@ mod rmrk_proxy {
                     "MintingLazy::mint"
                 ))))
                 .returns::<()>()
-                .try_invoke()
-                .map_err(|_| ProxyError::MintingError)?;
-            mint_result.map_err(|_| ProxyError::MintingError)?;
+                .try_invoke();
+            ink::env::debug_println!("mint_result: {:?}", mint_result);
+            mint_result.map_err(|_| ProxyError::MintingError)?.map_err(|_| ProxyError::MintingError)?;
 
             let token_id = build_call::<DefaultEnvironment>()
                 .call(self.rmrk_contract)
@@ -100,7 +100,7 @@ mod rmrk_proxy {
                     ExecutionInput::new(Selector::new(ink::selector_bytes!(
                         "MultiAsset::add_asset_to_token"
                     )))
-                    .push_arg(Id::U64(token_id)) // TODO determine minted token id. How? totalSupply?
+                    .push_arg(Id::U64(token_id)) // TODO check if there is other way to determine token Id, beside reading totalSupply?
                     .push_arg(asset_id as u32)
                     .push_arg(None::<u32>),
                 )
@@ -128,12 +128,12 @@ mod rmrk_proxy {
         }
 
         #[ink(message)]
-        pub fn get_rmrk_contract_address(&self) -> AccountId {
+        pub fn rmrk_contract_address(&self) -> AccountId {
             self.rmrk_contract
         }
 
         #[ink(message)]
-        pub fn get_catalog_contract_address(&self) -> AccountId {
+        pub fn catalog_contract_address(&self) -> AccountId {
             self.catalog_contract
         }
 
@@ -160,8 +160,8 @@ mod rmrk_proxy {
             let catalog: AccountId = [0x41; 32].into();
 
             let contract = RmrkProxy::new(rmrk, catalog);
-            assert_eq!(contract.get_rmrk_contract_address(), rmrk);
-            assert_eq!(contract.get_catalog_contract_address(), catalog);
+            assert_eq!(contract.rmrk_contract_address(), rmrk);
+            assert_eq!(contract.catalog_contract_address(), catalog);
         }
     }
 
