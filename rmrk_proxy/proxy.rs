@@ -23,7 +23,6 @@
 mod rmrk_proxy {
     use crate::{
         ensure,
-        LazyMintProxy,
         ProxyError,
         Result,
     };
@@ -59,28 +58,6 @@ mod rmrk_proxy {
         guard: reentrancy_guard::Data,
         #[storage_field]
         proxy: crate::types::Data,
-    }
-
-    impl LazyMintProxy for RmrkProxy {
-        fn rmrk_contract_address(&self) -> AccountId {
-            self.proxy.rmrk_contract.unwrap()
-        }
-
-        fn catalog_contract_address(&self) -> AccountId {
-            self.proxy.catalog_contract.unwrap()
-        }
-
-        #[modifiers(only_owner)]
-        fn set_rmrk_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
-            self.proxy.rmrk_contract = Option::Some(new_contract_address);
-            Ok(())
-        }
-
-        #[modifiers(only_owner)]
-        fn set_catalog_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
-            self.proxy.catalog_contract = Option::Some(new_contract_address);
-            Ok(())
-        }
     }
 
     impl RmrkProxy {
@@ -177,6 +154,26 @@ mod rmrk_proxy {
                 .map_err(|_| ProxyError::OwnershipTransferError)?;
             transfer_token_result.map_err(|_| ProxyError::OwnershipTransferError)?;
 
+            Ok(())
+        }
+
+        pub fn rmrk_contract_address(&self) -> AccountId {
+            self.proxy.rmrk_contract.unwrap()
+        }
+
+        pub fn catalog_contract_address(&self) -> AccountId {
+            self.proxy.catalog_contract.unwrap()
+        }
+
+        #[modifiers(only_owner)]
+        pub fn set_rmrk_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
+            self.proxy.rmrk_contract = Option::Some(new_contract_address);
+            Ok(())
+        }
+
+        #[modifiers(only_owner)]
+        pub fn set_catalog_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
+            self.proxy.catalog_contract = Option::Some(new_contract_address);
             Ok(())
         }
 

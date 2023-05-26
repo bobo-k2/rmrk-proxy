@@ -1,5 +1,8 @@
 use openbrush::{
-    contracts::{ownable::OwnableError, reentrancy_guard::ReentrancyGuardError},
+    contracts::{
+        ownable::OwnableError,
+        reentrancy_guard::ReentrancyGuardError,
+    },
     traits::AccountId,
 };
 
@@ -36,7 +39,7 @@ impl From<OwnableError> for ProxyError {
 }
 
 impl From<ReentrancyGuardError> for ProxyError {
-  fn from(error: ReentrancyGuardError) -> Self {
-      ProxyError::ReentrancyError(error)
-  }
+    fn from(error: ReentrancyGuardError) -> Self {
+        ProxyError::ReentrancyError(error)
+    }
 }
