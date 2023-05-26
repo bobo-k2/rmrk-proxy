@@ -62,11 +62,16 @@ mod rmrk_proxy {
 
     impl RmrkProxy {
         #[ink(constructor)]
-        pub fn new(rmrk_contract: AccountId, catalog_contract: AccountId) -> Self {
+        pub fn new(
+            rmrk_contract: AccountId,
+            catalog_contract: AccountId,
+            mint_price: Balance,
+        ) -> Self {
             let mut instance = Self::default();
             instance.proxy.rmrk_contract = Option::Some(rmrk_contract);
             instance.proxy.catalog_contract = Option::Some(catalog_contract);
             instance.proxy.salt = 0;
+            instance.proxy.mint_price = mint_price;
 
             let caller = instance.env().caller();
             instance._init_with_owner(caller);
@@ -78,6 +83,12 @@ mod rmrk_proxy {
         pub fn mint(&mut self) -> Result<()> {
             const GAS_LIMIT: u64 = 5_000_000_000;
             const MAX_ASSETS: u32 = 255;
+
+            let transferred_value = Self::env().transferred_value();
+            ensure!(
+                transferred_value == self.proxy.mint_price,
+                ProxyError::BadMintPrice
+            );
 
             let total_assets = build_call::<DefaultEnvironment>()
                 .call(self.proxy.rmrk_contract.unwrap())
@@ -95,7 +106,6 @@ mod rmrk_proxy {
                 ProxyError::TooManyAssetsDefined
             );
 
-            let transferred_value = Self::env().transferred_value();
             // TODO check why the call is failing silently when no or invalid transferred value is provided.
             let mint_result = build_call::<DefaultEnvironment>()
                 .call(self.proxy.rmrk_contract.unwrap())
@@ -165,6 +175,10 @@ mod rmrk_proxy {
             self.proxy.catalog_contract.unwrap()
         }
 
+        pub fn mint_price(&self) -> Balance {
+            self.proxy.mint_price
+        }
+
         #[modifiers(only_owner)]
         pub fn set_rmrk_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
             self.proxy.rmrk_contract = Option::Some(new_contract_address);
@@ -172,8 +186,17 @@ mod rmrk_proxy {
         }
 
         #[modifiers(only_owner)]
-        pub fn set_catalog_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
+        pub fn set_catalog_contract_address(
+            &mut self,
+            new_contract_address: AccountId,
+        ) -> Result<()> {
             self.proxy.catalog_contract = Option::Some(new_contract_address);
+            Ok(())
+        }
+
+        #[modifiers(only_owner)]
+        pub fn set_mint_price(&mut self, new_mint_price: Balance) -> Result<()> {
+            self.proxy.mint_price = new_mint_price;
             Ok(())
         }
 
@@ -200,6 +223,7 @@ mod rmrk_proxy {
             let contract = init_contract();
             assert_eq!(contract.rmrk_contract_address(), rmrk_address());
             assert_eq!(contract.catalog_contract_address(), catalog_address());
+            assert_eq!(contract.mint_price(), 1_000_000_000_000_000_000);
         }
 
         #[ink::test]
@@ -240,9 +264,32 @@ mod rmrk_proxy {
             );
         }
 
+        #[ink::test]
+        fn set_mint_price_works() {
+            let mut contract = init_contract();
+            assert!(contract.set_mint_price(100).is_ok());
+            assert_eq!(contract.mint_price(), 100);
+        }
+
+        #[ink::test]
+        fn set_mint_price_fails_if_not_owner() {
+            let mut contract = init_contract();
+            set_sender(default_accounts().bob);
+            assert_eq!(
+                contract.set_mint_price(100),
+                Err(ProxyError::OwnableError(OwnableError::CallerIsNotOwner))
+            );
+        }
+
+        #[ink::test]
+        fn mint_fails_if_no_balance() {
+            let mut contract = init_contract();
+            assert_eq!(contract.mint(), Err(ProxyError::BadMintPrice));
+        }
+
         fn init_contract() -> RmrkProxy {
             set_sender(default_accounts().alice);
-            RmrkProxy::new(rmrk_address(), catalog_address())
+            RmrkProxy::new(rmrk_address(), catalog_address(), 1_000_000_000_000_000_000)
         }
 
         fn rmrk_address() -> AccountId {
@@ -364,7 +411,11 @@ mod rmrk_proxy {
             assert_eq!(read_assets_count_result, 1);
 
             // *************** Create RMRK proxy contract and mint ***************
-            let proxy_constructor = RmrkProxyRef::new(rmrk_address, catalog_contract_address);
+            let proxy_constructor = RmrkProxyRef::new(
+                rmrk_address,
+                catalog_contract_address,
+                1_000_000_000_000_000_000,
+            );
             let proxy_address = client
                 .instantiate("rmrk_proxy", &alice, proxy_constructor, 0, None)
                 .await

@@ -3,7 +3,10 @@ use openbrush::{
         ownable::OwnableError,
         reentrancy_guard::ReentrancyGuardError,
     },
-    traits::AccountId,
+    traits::{
+        AccountId,
+        Balance,
+    },
 };
 
 pub const STORAGE_KEY: u32 = openbrush::storage_unique_key!(Data);
@@ -13,6 +16,7 @@ pub const STORAGE_KEY: u32 = openbrush::storage_unique_key!(Data);
 pub struct Data {
     pub rmrk_contract: Option<AccountId>,
     pub catalog_contract: Option<AccountId>,
+    pub mint_price: Balance,
     pub salt: u64, // used for pseudo random number generation
 }
 
@@ -28,6 +32,7 @@ pub enum ProxyError {
     AddTokenAssetError,
     NoAssetsDefined,
     TooManyAssetsDefined,
+    BadMintPrice,
 }
 
 pub type Result<T> = core::result::Result<T, ProxyError>;
