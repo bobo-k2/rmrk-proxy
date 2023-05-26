@@ -62,10 +62,6 @@ mod rmrk_proxy {
     }
 
     impl LazyMintProxy for RmrkProxy {
-        fn mint(&mut self) -> Result<()> {
-            Ok(())
-        }
-
         fn rmrk_contract_address(&self) -> AccountId {
             self.proxy.rmrk_contract.unwrap()
         }
@@ -101,6 +97,7 @@ mod rmrk_proxy {
         }
 
         #[ink(message, payable)]
+        #[modifiers(non_reentrant)]
         pub fn mint(&mut self) -> Result<()> {
             const GAS_LIMIT: u64 = 5_000_000_000;
             const MAX_ASSETS: u32 = 255;

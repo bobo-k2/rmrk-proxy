@@ -9,11 +9,6 @@ pub type LazyMintProxyRef = dyn LazyMintProxy;
 
 #[openbrush::trait_definition]
 pub trait LazyMintProxy {
-    // Purchase a token.
-    #[ink(message, payable)]
-    #[modifiers(non_reentrant)]
-    fn mint(&mut self) -> Result<()>;
-
     #[ink(message)]
     fn rmrk_contract_address(&self) -> AccountId;
 

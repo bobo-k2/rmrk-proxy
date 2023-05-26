@@ -1,5 +1,5 @@
 use openbrush::{
-    contracts::ownable::OwnableError,
+    contracts::{ownable::OwnableError, reentrancy_guard::ReentrancyGuardError},
     traits::AccountId,
 };
 
@@ -16,8 +16,10 @@ pub struct Data {
 #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub enum ProxyError {
-    /// Caller is not a marketplace owner.
+    /// A caller is not a marketplace owner.
     OwnableError(OwnableError),
+    /// A caller is trying to make second call while 1st one is still executing.
+    ReentrancyError(ReentrancyGuardError),
     MintingError,
     OwnershipTransferError,
     AddTokenAssetError,
@@ -31,4 +33,10 @@ impl From<OwnableError> for ProxyError {
     fn from(error: OwnableError) -> Self {
         ProxyError::OwnableError(error)
     }
+}
+
+impl From<ReentrancyGuardError> for ProxyError {
+  fn from(error: ReentrancyGuardError) -> Self {
+      ProxyError::ReentrancyError(error)
+  }
 }
