@@ -87,7 +87,7 @@ mod rmrk_proxy {
             let transferred_value = Self::env().transferred_value();
             ensure!(
                 transferred_value == self.proxy.mint_price,
-                ProxyError::BadMintPrice
+                ProxyError::BadMintValue
             );
 
             let total_assets = build_call::<DefaultEnvironment>()
@@ -167,24 +167,29 @@ mod rmrk_proxy {
             Ok(())
         }
 
+        #[ink(message)]
         pub fn rmrk_contract_address(&self) -> AccountId {
             self.proxy.rmrk_contract.unwrap()
         }
 
+        #[ink(message)]
         pub fn catalog_contract_address(&self) -> AccountId {
             self.proxy.catalog_contract.unwrap()
         }
 
+        #[ink(message)]
         pub fn mint_price(&self) -> Balance {
             self.proxy.mint_price
         }
 
+        #[ink(message)]
         #[modifiers(only_owner)]
         pub fn set_rmrk_contract_address(&mut self, new_contract_address: AccountId) -> Result<()> {
             self.proxy.rmrk_contract = Option::Some(new_contract_address);
             Ok(())
         }
 
+        #[ink(message)]
         #[modifiers(only_owner)]
         pub fn set_catalog_contract_address(
             &mut self,
@@ -194,6 +199,7 @@ mod rmrk_proxy {
             Ok(())
         }
 
+        #[ink(message)]
         #[modifiers(only_owner)]
         pub fn set_mint_price(&mut self, new_mint_price: Balance) -> Result<()> {
             self.proxy.mint_price = new_mint_price;
@@ -284,7 +290,7 @@ mod rmrk_proxy {
         #[ink::test]
         fn mint_fails_if_no_balance() {
             let mut contract = init_contract();
-            assert_eq!(contract.mint(), Err(ProxyError::BadMintPrice));
+            assert_eq!(contract.mint(), Err(ProxyError::BadMintValue));
         }
 
         fn init_contract() -> RmrkProxy {

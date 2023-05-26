@@ -27,12 +27,13 @@ pub enum ProxyError {
     OwnableError(OwnableError),
     /// A caller is trying to make second call while 1st one is still executing.
     ReentrancyError(ReentrancyGuardError),
+    /// Something went wrong while invoking mint method on the proxied contract.
     MintingError,
     OwnershipTransferError,
     AddTokenAssetError,
     NoAssetsDefined,
     TooManyAssetsDefined,
-    BadMintPrice,
+    BadMintValue,
 }
 
 pub type Result<T> = core::result::Result<T, ProxyError>;
